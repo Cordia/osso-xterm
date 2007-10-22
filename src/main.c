@@ -38,7 +38,7 @@
 
 #include <libosso.h>
 
-#include "terminal-app.h"
+#include "terminal-manager.h"
 
 static gint osso_xterm_incoming(const gchar *interface,
     const gchar *method,
@@ -59,7 +59,7 @@ static gint osso_xterm_incoming(const gchar *interface,
     command = g_array_index(arguments, osso_rpc_t, 0).value.s;
   }
 
-  retval->value.b = terminal_app_launch(TERMINAL_APP(data),
+  retval->value.b = terminal_manager_new_window(TERMINAL_MANAGER(data),
       command,
       NULL);
   retval->type = DBUS_TYPE_BOOLEAN;
@@ -70,7 +70,7 @@ static gint osso_xterm_incoming(const gchar *interface,
 int
 main (int argc, char **argv)
 {
-  gpointer         app;
+  gpointer         manager;
   GError          *error = NULL;
   osso_context_t  *osso_context;
   const gchar     *command = NULL;
@@ -122,8 +122,8 @@ main (int argc, char **argv)
     exit(EXIT_SUCCESS);
   }
 
-  app = terminal_app_new();
-  g_object_add_weak_pointer(G_OBJECT(app), &app);
+  manager = terminal_manager_get_instance();
+  g_object_add_weak_pointer(G_OBJECT(manager), &manager);
 
   osso_context = osso_initialize("xterm", VERSION, FALSE, NULL);
 
@@ -132,23 +132,25 @@ main (int argc, char **argv)
     exit(EXIT_FAILURE);
   }
 
-  g_object_set_data(G_OBJECT(app), "osso", osso_context);
-  if (!terminal_app_launch (TERMINAL_APP(app), command, &error))
+  g_object_set_data(G_OBJECT(manager), "osso", osso_context);
+  if (!terminal_manager_new_window(manager, command, &error))
     {
       g_printerr (_("Unable to launch terminal: %s\n"), error->message);
       g_error_free(error);
       exit(EXIT_FAILURE);
     }
 
+  g_signal_connect(G_OBJECT(manager), "last_window_closed", G_CALLBACK(gtk_main_quit), NULL);
+
   osso_rpc_set_default_cb_f(osso_context,
       osso_xterm_incoming,
-      app);
+      manager);
 
   gtk_main ();
 
-  if (app != NULL)
+  if (manager != NULL)
     {
-      g_object_unref(G_OBJECT(app));
+      g_object_unref(G_OBJECT(manager));
     }
 
   osso_deinitialize(osso_context);

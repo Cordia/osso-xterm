@@ -52,9 +52,7 @@ struct _TerminalWidget
   GtkHBox              __parent__;
   GtkWidget           *terminal;
   GtkWidget           *scrollbar;
-  GtkWidget	      *tbar;
   GtkToolItem         *cbutton;
-  GSList	      *keys;
 
   GPid                 pid;
   gchar               *working_directory;
@@ -65,9 +63,6 @@ struct _TerminalWidget
   GConfClient         *gconf_client;
   guint                scrollbar_conid;
   guint		       scrollback_conid;
-  guint                toolbar_conid;
-  guint                keys_conid;
-  guint                key_labels_conid;
   guint                font_size_conid;
   guint                font_base_size_conid;
   guint                font_name_conid;
@@ -128,7 +123,9 @@ char      *terminal_widget_get_tag		      (TerminalWidget *widget,
 						       gint            y,
 						       gint           *tag);
 
-void terminal_widget_set_app_win (TerminalWidget *widget, HildonWindow *window);
+void terminal_widget_send_keys(TerminalWidget *widget,
+			       const gchar *key_string);
+void terminal_widget_send_ctrl_key(TerminalWidget *window, const char *str);
 
 
 G_END_DECLS;

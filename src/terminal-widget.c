@@ -128,14 +128,6 @@ static void     terminal_widget_gconf_scrollbar               (GConfClient    *c
                                                                guint           conn_id,
                                                                GConfEntry     *entry,
                                                                TerminalWidget *widget);
-static void     terminal_widget_gconf_toolbar               (GConfClient    *client,
-                                                               guint           conn_id,
-                                                               GConfEntry     *entry,
-                                                               TerminalWidget *widget);
-static void     terminal_widget_gconf_keys               (GConfClient    *client,
-                                                               guint           conn_id,
-                                                               GConfEntry     *entry,
-                                                               TerminalWidget *widget);
 static void     terminal_widget_gconf_reverse                 (GConfClient    *client,
                                                                guint           conn_id,
                                                                GConfEntry     *entry,
@@ -149,11 +141,6 @@ static void     terminal_widget_update_font                   (TerminalWidget *w
                                                                gint size);
 static void     terminal_widget_update_scrolling_bar          (TerminalWidget *widget,
                                                                gboolean show);
-static void     terminal_widget_update_tool_bar          (TerminalWidget *widget,
-                                                               gboolean show);
-static void     terminal_widget_update_keys          (TerminalWidget *widget,
-                                                               GSList *keys,
-							       GSList *key_labels);
 static void     terminal_widget_update_colors		      (TerminalWidget *widget,
 							       const gchar *fg_name,
 							       const gchar *bg_name,
@@ -163,18 +150,14 @@ static void     terminal_widget_timer_background_destroy      (gpointer        u
 #endif
 static void     terminal_widget_emit_context_menu            (TerminalWidget *widget,
 		                                              gpointer user_data);
+/*
 static void	terminal_widget_vte_ctrlify_notify	     (VteTerminal *terminal,
 							      GParamSpec  *pspec,
 							      TerminalWidget *widget);
+							      */
 /*static void	terminal_widget_ctrlify_notify	     	     (GtkToggleToolButton *item,
 							      TerminalWidget *widget);*/
-static void	terminal_widget_do_keys			     (TerminalWidget *widget,
-							      const gchar *key_string);
-static void	terminal_widget_do_key_button		     (GObject *button,
-							      TerminalWidget *widget);
 
-static void terminal_widget_ctrl_clicked (GtkButton    *item,
-					TerminalWidget *widget);
 
 static GObjectClass *parent_class;
 static guint widget_signals[LAST_SIGNAL];
@@ -312,9 +295,6 @@ terminal_widget_init (TerminalWidget *widget)
 {
   GError *err = NULL;
   gboolean scrollbar;
-  gboolean toolbar;
-  GSList *keys;
-  GSList *key_labels;
   GConfValue *gconf_value;
   GtkWidget *hbox;
 
@@ -335,21 +315,6 @@ terminal_widget_init (TerminalWidget *widget)
   widget->scrollbar_conid = gconf_client_notify_add(widget->gconf_client,
           OSSO_XTERM_GCONF_SCROLLBAR,
           (GConfClientNotifyFunc)terminal_widget_gconf_scrollbar,
-          widget,
-          NULL, &err);
-  widget->toolbar_conid = gconf_client_notify_add(widget->gconf_client,
-          OSSO_XTERM_GCONF_TOOLBAR,
-          (GConfClientNotifyFunc)terminal_widget_gconf_toolbar,
-          widget,
-          NULL, &err);
-  widget->keys_conid = gconf_client_notify_add(widget->gconf_client,
-          OSSO_XTERM_GCONF_KEYS,
-          (GConfClientNotifyFunc)terminal_widget_gconf_keys,
-          widget,
-          NULL, &err);
-  widget->key_labels_conid = gconf_client_notify_add(widget->gconf_client,
-          OSSO_XTERM_GCONF_KEY_LABELS,
-          (GConfClientNotifyFunc)terminal_widget_gconf_keys,
           widget,
           NULL, &err);
   if (err != NULL) {
@@ -463,36 +428,6 @@ terminal_widget_init (TerminalWidget *widget)
   widget->scrollbar = gtk_vscrollbar_new (VTE_TERMINAL (widget->terminal)->adjustment);
   gtk_box_pack_start (GTK_BOX (hbox), widget->scrollbar, FALSE, FALSE, 0);
 
-  widget->tbar = gtk_toolbar_new ();
-  g_object_set(widget->tbar, 
-		  "orientation", GTK_ORIENTATION_HORIZONTAL,
-		  NULL);
-  gtk_widget_show (GTK_WIDGET (widget->tbar));
-
-  widget->cbutton = gtk_tool_button_new (NULL, "Ctrl");
-//  gtk_tool_item_set_expand(widget->cbutton, TRUE);
-//  gtk_tool_button_set_label(GTK_TOOL_BUTTON(widget->cbutton), "Ctrl");
-  gtk_widget_show(GTK_WIDGET(widget->cbutton));
-
-  g_debug("%s - tbar: %p", __FUNCTION__, widget->tbar);
-
-  g_signal_connect (G_OBJECT(widget->terminal), "notify::ctrlify",
-		    G_CALLBACK(terminal_widget_vte_ctrlify_notify),
-		    widget);
-/*
-  g_signal_connect (G_OBJECT(widget->cbutton), "toggled",
-		    G_CALLBACK(terminal_widget_ctrlify_notify),
-		    widget);
-*/
-  g_signal_connect (G_OBJECT(widget->cbutton), "clicked",
-		    G_CALLBACK(terminal_widget_ctrl_clicked),
-		    widget);
-
-  gtk_toolbar_insert(GTK_TOOLBAR(widget->tbar),
-		  widget->cbutton,
-		  -1);
-//  gtk_box_pack_start (GTK_BOX (widget), widget->tbar, FALSE, FALSE, 0);
-
   /* apply current settings */
   gconf_value = gconf_client_get(widget->gconf_client,
                                  OSSO_XTERM_GCONF_SCROLLBAR,
@@ -509,39 +444,7 @@ terminal_widget_init (TerminalWidget *widget)
           gconf_value_free(gconf_value);
   }
 
-  /* apply current settings */
-  gconf_value = gconf_client_get(widget->gconf_client,
-                                 OSSO_XTERM_GCONF_TOOLBAR,
-                                 &err);
-  if (err != NULL) {
-      g_printerr("Unable to get toolbar setting from gconf: %s\n",
-                 err->message);
-      g_clear_error(&err);
-  }
-  toolbar = OSSO_XTERM_DEFAULT_TOOLBAR;
-  if (gconf_value) {
-          if (gconf_value->type == GCONF_VALUE_BOOL)
-                  toolbar = gconf_value_get_bool(gconf_value);
-          gconf_value_free(gconf_value);
-  }
-
-  keys = gconf_client_get_list(widget->gconf_client,
-                                 OSSO_XTERM_GCONF_KEYS,
-				 GCONF_VALUE_STRING,
-                                 &err);
-  key_labels = gconf_client_get_list(widget->gconf_client,
-                                 OSSO_XTERM_GCONF_KEY_LABELS,
-				 GCONF_VALUE_STRING,
-                                 &err);
-
   terminal_widget_update_scrolling_bar(TERMINAL_WIDGET(widget), scrollbar);
-  terminal_widget_update_tool_bar(TERMINAL_WIDGET(widget), toolbar);
-  terminal_widget_update_keys(TERMINAL_WIDGET(widget), keys, key_labels);
-
-  g_slist_foreach(keys, (GFunc)g_free, NULL);
-  g_slist_foreach(key_labels, (GFunc)g_free, NULL);
-  g_slist_free(keys);
-  g_slist_free(key_labels);
 
   terminal_widget_gconf_font_size(widget->gconf_client, 0, NULL, widget);
   terminal_widget_gconf_reverse (widget->gconf_client, 0, NULL, widget);
@@ -598,12 +501,6 @@ terminal_widget_finalize (GObject *object)
 
   gconf_client_notify_remove(widget->gconf_client,
                              widget->scrollbar_conid);
-  gconf_client_notify_remove(widget->gconf_client,
-                             widget->toolbar_conid);
-  gconf_client_notify_remove(widget->gconf_client,
-                             widget->keys_conid);
-  gconf_client_notify_remove(widget->gconf_client,
-                             widget->key_labels_conid);
   gconf_client_notify_remove(widget->gconf_client,
                              widget->font_name_conid);
   gconf_client_notify_remove(widget->gconf_client,
@@ -1116,47 +1013,6 @@ terminal_widget_update_scrolling_bar (TerminalWidget *widget, gboolean show)
 }
 
 static void
-terminal_widget_update_tool_bar (TerminalWidget *widget, gboolean show)
-{
-    if (show) {
-        gtk_widget_show_all (widget->tbar);
-    }
-    else {
-        gtk_widget_hide_all (widget->tbar);
-    }
-}
-
-static void
-terminal_widget_update_keys (TerminalWidget *widget, GSList *keys, GSList *key_labels)
-{
-	g_slist_foreach(widget->keys, (GFunc)gtk_widget_destroy, NULL);
-	g_slist_free(widget->keys);
-	widget->keys = NULL;
-	guint i = 0;
-
-	while (keys && key_labels) {
-        g_debug ("%s - add %s",__FUNCTION__, (gchar *)key_labels->data);
-		GtkToolItem *button = gtk_tool_button_new(NULL, key_labels->data);
-		g_object_set_data_full(G_OBJECT(button), "keys", g_strdup(keys->data), g_free);
-
-		gtk_widget_show(GTK_WIDGET(button));
-		gtk_toolbar_insert(GTK_TOOLBAR(widget->tbar), 
-				button, i++);
-
-		g_signal_connect(G_OBJECT(button),
-				"clicked",
-				G_CALLBACK(terminal_widget_do_key_button),
-				widget);
-
-		widget->keys = g_slist_append(widget->keys,
-				button);
-
-		keys = g_slist_next(keys);
-		key_labels = g_slist_next(key_labels);
-	}
-}
-
-static void
 terminal_widget_update_colors (TerminalWidget *widget, const gchar *fg_name, const gchar *bg_name, gboolean reverse)
 {
     GdkColor fg, bg;
@@ -1191,48 +1047,6 @@ terminal_widget_gconf_scrollbar(GConfClient    *client,
     value = gconf_entry_get_value(entry);
     scrollbar = gconf_value_get_bool(value);
     terminal_widget_update_scrolling_bar(widget, scrollbar);
-}
-
-static void
-terminal_widget_gconf_toolbar(GConfClient    *client,
-                                guint           conn_id,
-                                GConfEntry     *entry,
-                                TerminalWidget *widget) {
-    GConfValue *value;
-    gboolean toolbar;
-
-    value = gconf_entry_get_value(entry);
-    toolbar = gconf_value_get_bool(value);
-    terminal_widget_update_tool_bar(widget, toolbar);
-}
-
-static void
-terminal_widget_gconf_keys(GConfClient    *client,
-                                guint           conn_id,
-                                GConfEntry     *entry,
-                                TerminalWidget *widget)
-{
-    GSList *keys;
-    GSList *key_labels;
-
-    (void)entry;
-    (void)conn_id;
-
-    key_labels = gconf_client_get_list(client,
-		OSSO_XTERM_GCONF_KEY_LABELS,
-		GCONF_VALUE_STRING,
-		NULL);
-    keys = gconf_client_get_list(client,
-		OSSO_XTERM_GCONF_KEYS,
-		GCONF_VALUE_STRING,
-		NULL);
-
-    terminal_widget_update_keys(widget, keys, key_labels);
-
-    g_slist_foreach(keys, (GFunc)g_free, NULL);
-    g_slist_foreach(key_labels, (GFunc)g_free, NULL);
-    g_slist_free(keys);
-    g_slist_free(key_labels);
 }
 
 static void
@@ -1316,17 +1130,6 @@ GtkWidget*
 terminal_widget_new ()
 {
   return g_object_new(TERMINAL_TYPE_WIDGET, NULL);
-}
-
-
-void
-terminal_widget_set_app_win (TerminalWidget *widget, HildonWindow *window)
-{
-	widget->app = GTK_WINDOW (window);
-    g_debug("%s - tbar: %p", __FUNCTION__, widget->tbar);
-
-    hildon_window_add_toolbar (HILDON_WINDOW (widget->app), GTK_TOOLBAR (widget->tbar));
-//    terminal_widget_update_tool_bar (widget, FALSE);
 }
 
 /**
@@ -1740,6 +1543,7 @@ terminal_widget_get_tag (TerminalWidget *widget,
       tag);
 }
 
+/*
 static void
 terminal_widget_vte_ctrlify_notify (VteTerminal    *terminal,
 				    GParamSpec     *pspec,
@@ -1755,14 +1559,15 @@ terminal_widget_vte_ctrlify_notify (VteTerminal    *terminal,
 	tval);
   }
 }
+*/
 /*
 typedef struct {
     GtkWidget *dialog;
     gchar *ret;
 } ctrl_dialog_data;
 */
-static void
-terminal_widget_send_ctrl_key(GtkWindow *window,
+void
+terminal_widget_send_ctrl_key(TerminalWidget *widget,
                            const char *str)
 {
   GdkEventKey *key;
@@ -1771,7 +1576,7 @@ terminal_widget_send_ctrl_key(GtkWindow *window,
 
   key = (GdkEventKey *) gdk_event_new(GDK_KEY_PRESS);
 
-  key->window = GDK_WINDOW (GTK_WIDGET (window)->window);
+  key->window = GDK_WINDOW (GTK_WIDGET (widget)->window);
   key->time = GDK_CURRENT_TIME;
   key->state = GDK_CONTROL_MASK;
   key->keyval = gdk_keyval_from_name(str);
@@ -1814,77 +1619,6 @@ im_context_commit (GtkIMContext *ctx,
 }
 */
 
-static void
-terminal_widget_ctrl_clicked (GtkButton    *item,
-				TerminalWidget *widget)
-{
-//  ctrl_dialog_data *data;
-  GtkWidget *dialog, *label, *input;
-//  GtkIMContext *imctx;
-  gchar label_text[256];
-  gchar *text = NULL;
-
-  dialog = gtk_dialog_new_with_buttons("Control",
-                                       GTK_WINDOW(widget->app),
-                                       GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
-                                       _("weba_bd_ok"), GTK_RESPONSE_OK,
-                                       NULL);
-
-//  imctx = gtk_im_multicontext_new();
-
-//  data = g_new0(ctrl_dialog_data, 1);
-//  data->dialog = dialog;
-//  g_signal_connect(imctx, "commit", G_CALLBACK(im_context_commit), data);
-
-  g_snprintf (label_text, 255, "Ctrl + [%s]", 
-              dgettext("osso-applet-textinput", "tein_ti_text_input_title"));
-  label = gtk_label_new(label_text);
-  gtk_box_pack_start_defaults(GTK_BOX(GTK_DIALOG(dialog)->vbox), label);
-
-  input = gtk_entry_new ();
-  gtk_entry_set_max_length (GTK_ENTRY (input), 1);
-  gtk_entry_set_width_chars (GTK_ENTRY (input), 1);
-  gtk_box_pack_start_defaults(GTK_BOX(GTK_DIALOG(dialog)->vbox), input);
-  gtk_widget_grab_focus (input);
-  gtk_widget_show_all(dialog);
-
-/*
-  gtk_im_context_set_client_window(imctx, GTK_WIDGET(dialog)->window);
-
-  g_signal_connect( G_OBJECT(dialog), "focus-in-event",
-          G_CALLBACK(ctrl_dialog_focus), imctx);
-  g_signal_connect( G_OBJECT(dialog), "focus-out-event",
-          G_CALLBACK(ctrl_dialog_focus), imctx);
-*/
-
-  switch (gtk_dialog_run(GTK_DIALOG(dialog))) {
-    case GTK_RESPONSE_OK:
-      text = g_strdup (gtk_entry_get_text (GTK_ENTRY (input)));
-      g_debug ("%s - %s",__FUNCTION__ , text);
-	  if (strlen (text) > 1) {
-	      text[1] = '\0';
-	  }
-      break;
-    default:
-      break;
-  }
-
-
-  gtk_widget_hide(dialog);
-  gtk_widget_destroy(dialog);
-/*
-  gtk_im_context_focus_out(imctx);
-  gtk_object_unref(GTK_OBJECT(imctx));
-*/
-  if (text != NULL) {
-    g_debug ("text != NULL");
-    terminal_widget_send_ctrl_key(GTK_WINDOW (widget->app), text);
-    g_free (text);
-  }
-
-//  g_free(data);
-
-}
 /*
 static void
 terminal_widget_ctrlify_notify (GtkToggleToolButton    *item,
@@ -2011,8 +1745,8 @@ static const gchar *parse_key(const gchar *source,
 	}
 }
 
-static void terminal_widget_do_keys(TerminalWidget *widget,
-		const gchar *key_string)
+void terminal_widget_send_keys(TerminalWidget *widget,
+			       const gchar *key_string)
 {
 	guint keyval = 0;
 	guint state = 0;
@@ -2021,11 +1755,6 @@ static void terminal_widget_do_keys(TerminalWidget *widget,
 		key_string = parse_key(key_string, &keyval, &state);
 		terminal_widget_send_key(widget, keyval, state);
 	}
-}
-static void terminal_widget_do_key_button(GObject *button,
-		TerminalWidget *widget)
-{
-	terminal_widget_do_keys(widget, g_object_get_data(button, "keys"));
 }
 
 gboolean   
