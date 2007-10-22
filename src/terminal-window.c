@@ -34,7 +34,11 @@
 #include <sys/types.h>
 #include <stdlib.h>
 #include <libosso.h>
+#if BROWSER == 0
 #include <osso-browser-interface.h>
+#elif BROWSER == 1
+#include <tablet-browser-interface.h>
+#endif
 
 #include <libintl.h>
 #include <locale.h>
@@ -488,7 +492,7 @@ terminal_window_key_press_event (TerminalWindow *window,
         case HILDON_HARDKEY_FULLSCREEN: /* Full screen */
             action = gtk_action_group_get_action(window->action_group,
                                                  "fullscreen");
-	    gtk_toggle_action_toggled(GTK_TOGGLE_ACTION(action));
+	    gtk_action_activate(action);
             return TRUE;
 
         case HILDON_HARDKEY_INCREASE: /* Zoom in */

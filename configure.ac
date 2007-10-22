@@ -42,7 +42,7 @@ else
 	PKG_CHECK_MODULES(HILDON_LIBS, hildon-libs >= 0.12.0)
 	AC_DEFINE(HILDON, 0, [Version of hildon libraries])
 fi
-PKG_CHECK_MODULES(BROWSER, maemo-browser-interface, [], [PKG_CHECK_MODULES(BROWSER, osso-browser-interface)])
+PKG_CHECK_MODULES(BROWSER, tablet-browser-interface, AC_DEFINE(BROWSER, 1, [Version of browser headers]), [AC_DEFINE(BROWSER, 0, [Version of browser headers]) PKG_CHECK_MODULES(maemo-browser-interface, [], [PKG_CHECK_MODULES(BROWSER, osso-browser-interface)])])
 AC_SUBST(HILDON_LIBS)
 AC_SUBST(HILDON_CFLAGS)
 AC_SUBST(HILDON_LIBS_LIBS)
