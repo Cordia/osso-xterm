@@ -34,7 +34,11 @@
 #include <sys/types.h>
 #include <stdlib.h>
 #include <libosso.h>
+#ifdef TABLET_BROWSER
+#include <tablet-browser-interface.h>
+#else
 #include <osso-browser-interface.h>
+#endif
 
 #include <libintl.h>
 #include <locale.h>
